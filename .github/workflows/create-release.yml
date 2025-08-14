@@ -1,0 +1,51 @@
+name: Create GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Triggers on tags like v1.0, v1.2.3
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x gradlew
+
+      # This step requires secrets to be set in the repository settings.
+      # It uses the same secrets as the deploy-to-play-store.yml workflow.
+      - name: Decode Keystore
+        shell: bash
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_FILE_PSWD: ${{ secrets.KEYSTORE_FILE_PSWD }}
+        run: |
+          if [ -z "$KEYSTORE_FILE" ]; then
+            echo "Keystore secret not found in this repository."
+            echo "Cannot build a signed release APK."
+            exit 1
+          fi
+          echo "$KEYSTORE_FILE" > keystore.asc
+          gpg -d --passphrase "$KEYSTORE_FILE_PSWD" --batch keystore.asc > keystore
+
+      - name: Build Release APK
+        env:
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_KEY_PSWD: ${{ secrets.KEYSTORE_KEY_PSWD }}
+          KEYSTORE_PSWD: ${{ secrets.KEYSTORE_PSWD }}
+        run: ./gradlew assembleRelease
+
+      - name: Create Release and Upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/app-release.apk 
